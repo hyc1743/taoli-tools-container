@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 
 <head>
+  <meta charset="utf-8">
   <title>Taoli Tools Container</title>
 
   <link rel="icon" type="image/x-icon" href="favicon.ico">
@@ -11,6 +12,31 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
   <link rel="stylesheet" href="app/styles/base.css">
+  <style>
+    #noVNC_fallback_error>div {
+      position: relative;
+    }
+
+    #noVNC_fallback_close {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.25);
+      color: #fff;
+      font-size: 16px;
+      line-height: 24px;
+      cursor: pointer;
+    }
+
+    #noVNC_fallback_close:hover {
+      background: rgba(0, 0, 0, 0.45);
+    }
+  </style>
 
   <script type="module" crossorigin="anonymous" src="app/error-handler.js"></script>
 </head>
@@ -19,7 +45,8 @@
 
   <div id="noVNC_fallback_error" class="noVNC_center">
     <div>
-      <div>error:</div>
+      <button id="noVNC_fallback_close" type="button" title="关闭" aria-label="关闭">×</button>
+      <div>错误：</div>
       <br>
       <div id="noVNC_fallback_errormsg"></div>
     </div>
@@ -27,14 +54,40 @@
 
   <div id="noVNC_container"></div>
 
+  <script>
+    // 独立于下方模块脚本，模块加载失败弹出错误时关闭按钮也能用
+    document.getElementById('noVNC_fallback_close').addEventListener('click', () => {
+      document.getElementById('noVNC_fallback_error').classList.remove('noVNC_open')
+      document.getElementById('noVNC_fallback_errormsg').replaceChildren()
+    })
+  </script>
+
   <script type="module" lang="javascript">
     import RFB from './core/rfb.js'
     import KeyTable from './core/input/keysym.js'
 
-    const rfb = new RFB(document.querySelector('#noVNC_container'), `wss://${window.location.hostname}`)
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const rfb = new RFB(document.querySelector('#noVNC_container'), `${wsProtocol}://${window.location.host}`)
     rfb.resizeSession = true
     rfb.qualityLevel = 0
     rfb.compressionLevel = 9
+
+    // http 等非安全上下文没有 navigator.clipboard，用隐藏 textarea
+    // 承接浏览器原生 paste 事件，并充当 execCommand('copy') 的选区
+    const clipboardFallback = document.createElement('textarea')
+    clipboardFallback.setAttribute('tabindex', '-1')
+    clipboardFallback.style.cssText = 'position:fixed;top:-100px;left:-100px;width:10px;height:10px;opacity:0;'
+    document.body.appendChild(clipboardFallback)
+
+    let fallbackPasteTimer = null
+    clipboardFallback.addEventListener('paste', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      clearTimeout(fallbackPasteTimer)
+      const text = (e.clipboardData || window.clipboardData).getData('text')
+      rfb.focus()
+      handlePastedText(text)
+    })
 
     function isPasteKeydownEvent(e) {
       return e.keyCode === 86 && (e.ctrlKey || e.metaKey)
@@ -44,39 +97,108 @@
       if (!isPasteKeydownEvent(e)) {
         return
       }
-      if (navigator.clipboard) {
-        e.stopPropagation()
-        navigator.clipboard.readText().then((text) => {
-          if (rfb._rfbConnectionState === 'connected') {
-            try {
-              pasteText(text)
-            } catch {}
+      e.stopPropagation()
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(handlePastedText).catch(() => {})
+      } else {
+        // 不 preventDefault，让浏览器把原生 paste 事件投递到聚焦的 textarea
+        clipboardFallback.value = ''
+        clipboardFallback.focus()
+        clearTimeout(fallbackPasteTimer)
+        fallbackPasteTimer = setTimeout(() => {
+          if (document.activeElement === clipboardFallback) {
+            rfb.focus()
+            releaseModifiers()
           }
-        })
+        }, 1000)
       }
     }
 
-    async function pasteText(text) {
+    function handlePastedText(text) {
+      if (!text || rfb._rfbConnectionState !== 'connected') {
+        return
+      }
+      pasteText(text).catch(() => {})
+    }
+
+    function releaseModifiers() {
       rfb.sendKey(0, 'ControlLeft', false)
       rfb.sendKey(0, 'MetaLeft', false)
+    }
+
+    async function pasteText(text) {
+      releaseModifiers()
       await new Promise(resolve => setTimeout(resolve, 500))
       for (const character of text) {
-        const code = character.charCodeAt()
+        const code = character.codePointAt(0)
+        if (code === 13) {
+          continue
+        }
+        if (code === 10) {
+          rfb.sendKey(KeyTable.XK_Return, character)
+          continue
+        }
+        if (code === 9) {
+          rfb.sendKey(KeyTable.XK_Tab, character)
+          continue
+        }
+        if (code > 0xFF) {
+          // 中文等 Latin-1 之外的字符：X11 Unicode keysym = 0x01000000 + 码点
+          rfb.sendKey(0x01000000 | code, character)
+          continue
+        }
         const needs_shift = /[!@#$%^&*()_+{}:\"<>?~|]/.test(character) || (rfb._remoteCapsLock ? /[a-z]/.test(character) : /[A-Z]/.test(character))
         if (needs_shift) {
           rfb.sendKey(KeyTable.XK_Shift_L, character, true)
         }
-        if (code === 10) {
-          rfb.sendKey(KeyTable.XK_Return, character)
-        } else {
-          console.log(character)
-          rfb.sendKey(code, character)
-        }
+        rfb.sendKey(code, character)
         if (needs_shift) {
           rfb.sendKey(KeyTable.XK_Shift_L, character, false)
         }
       }
     }
+
+    let pendingCopyText = null
+
+    function copyToLocalClipboard(text) {
+      if (!text) {
+        return
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(() => {})
+        return
+      }
+      if (!execCommandCopy(text)) {
+        // 不在用户手势里 execCommand 会被拒绝，留到下一次按键/点击时重试
+        pendingCopyText = text
+      }
+    }
+
+    function execCommandCopy(text) {
+      const previousFocus = document.activeElement
+      clipboardFallback.value = text
+      clipboardFallback.select()
+      let ok = false
+      try {
+        ok = document.execCommand('copy')
+      } catch { }
+      clipboardFallback.value = ''
+      if (previousFocus && previousFocus.focus) {
+        previousFocus.focus()
+      }
+      return ok
+    }
+
+    function retryPendingCopy() {
+      if (pendingCopyText === null) {
+        return
+      }
+      const text = pendingCopyText
+      pendingCopyText = null
+      execCommandCopy(text)
+    }
+    document.addEventListener('keydown', retryPendingCopy, true)
+    document.addEventListener('mousedown', retryPendingCopy, true)
 
     rfb.addEventListener('disconnect', (e) => {
       document.querySelector('#noVNC_container').removeEventListener('keydown', pasteKeyDownListener, true)
@@ -87,9 +209,7 @@
     })
 
     rfb.addEventListener('clipboard', (e) => {
-      try {
-        window.navigator.clipboard.writeText(e.detail.text)
-      } catch { }
+      copyToLocalClipboard(e.detail.text)
     })
   </script>
 </body>
