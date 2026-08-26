@@ -2,7 +2,18 @@
 
 mkdir -p /etc/docker
 
-echo "{\"seccomp-profile\": \"/etc/docker/seccomp.json\"}" > /etc/docker/daemon.json
+cat > /etc/docker/daemon.json <<'EOF'
+{
+  "seccomp-profile": "/etc/docker/seccomp.json",
+  "default-ulimits": {
+    "nofile": {
+      "Name": "nofile",
+      "Hard": 65535,
+      "Soft": 65535
+    }
+  }
+}
+EOF
 
 curl -fsSL https://github.com/aliez-ren/taoli-tools-container/raw/refs/heads/main/seccomp.json > /etc/docker/seccomp.json
 
