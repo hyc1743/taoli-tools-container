@@ -3,6 +3,10 @@ version: "3.9"
 services:
   container:
     image: ghcr.io/aliez-ren/taoli-tools-container:latest
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     volumes:
       - data:/home/taoli/data
       - tailscale:/home/taoli/.local/share/tailscale/
