@@ -1,0 +1,59 @@
+FROM debian:bookworm-slim
+
+ARG TARGETARCH
+ARG RUSTDESK_VERSION=1.4.9
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates \
+  chromium \
+  chromium-sandbox \
+  curl \
+  dbus \
+  dbus-x11 \
+  fonts-noto-cjk \
+  fonts-noto-core \
+  gosu \
+  libayatana-appindicator3-1 \
+  openbox \
+  procps \
+  python3-nacl \
+  python3-xdg \
+  qrencode \
+  tigervnc-standalone-server \
+  tzdata \
+  x11-xserver-utils \
+  && case "$TARGETARCH" in \
+    amd64) rustdesk_arch=x86_64 ;; \
+    arm64) rustdesk_arch=aarch64 ;; \
+    *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+  esac \
+  && curl -fsSL -o /tmp/rustdesk.deb \
+    "https://github.com/rustdesk/rustdesk/releases/download/${RUSTDESK_VERSION}/rustdesk-${RUSTDESK_VERSION}-${rustdesk_arch}.deb" \
+  && apt-get install -y --no-install-recommends /tmp/rustdesk.deb \
+  && rm -f /tmp/rustdesk.deb \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN ln -snf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+  && echo Asia/Shanghai > /etc/timezone \
+  && addgroup --gid 1000 taoli \
+  && adduser --uid 1000 --ingroup taoli --home /home/taoli --shell /bin/sh \
+    --disabled-password --gecos "" taoli \
+  && mkdir -p /home/taoli/data /root/.config/rustdesk /tmp/.X11-unix \
+  && chmod 1777 /tmp/.X11-unix \
+  && chown -R taoli:taoli /home/taoli
+
+COPY entrypoint.rustdesk.sh /usr/local/bin/entrypoint.sh
+COPY rustdesk-2fa.py /usr/local/bin/rustdesk-2fa
+
+ENV DISPLAY=:1 \
+  DISPLAY_GEOMETRY=1280x720 \
+  VNC_PORT=5900 \
+  RUSTDESK_PORT=21118
+
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/rustdesk-2fa
+
+EXPOSE 21118/tcp
+
+CMD ["/usr/local/bin/entrypoint.sh"]

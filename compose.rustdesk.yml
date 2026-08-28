@@ -1,19 +1,35 @@
-version: "3.9"
-
 services:
   container:
-    image: ghcr.io/taoli-tools/taoli-tools-container:latest
+    image: ghcr.io/taoli-tools/taoli-tools-container:rustdesk
+    init: true
+    shm_size: 256m
     ulimits:
       nofile:
         soft: 65535
-        hard: 65535
+        hard: 100000
+    ports:
+      - target: 21118
+        published: 21118
+        protocol: tcp
+        mode: ingress
     volumes:
       - data:/home/taoli/data
-      - tailscale:/home/taoli/.local/share/tailscale/
+      - rustdesk:/root/.config/rustdesk
       - /mnt:/home/taoli/cert
+    secrets:
+      - source: RUSTDESK_PASSWORD
+        target: RUSTDESK_PASSWORD
+        uid: "0"
+        gid: "0"
+        mode: 0400
     networks:
       - public
       - private
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
     deploy:
       replicas: 1
       restart_policy:
@@ -22,7 +38,8 @@ services:
         max_attempts: 0
         window: 0s
       update_config:
-        order: start-first
+        # RustDesk's identity database must not be opened by two tasks at once.
+        order: stop-first
         parallelism: 1
         delay: 5s
       rollback_config:
@@ -62,10 +79,13 @@ networks:
 volumes:
   data:
     driver: local
-  tailscale:
+  rustdesk:
     driver: local
 
 secrets:
+  RUSTDESK_PASSWORD:
+    external: true
+    name: taoli_tools_RUSTDESK_PASSWORD
   KEYCHAIN:
     file: keychain.toml
   CERT.pem:

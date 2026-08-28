@@ -32,7 +32,7 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push to Registries
+      - name: Build and Push Tailscale Image
         uses: docker/build-push-action@v6
         with:
           push: true
@@ -45,3 +45,18 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build and Push RustDesk Image
+        uses: docker/build-push-action@v6
+        with:
+          file: dockerfile.rustdesk
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository }}:sha-${{ github.sha }}-rustdesk
+            ghcr.io/${{ github.repository }}:rustdesk
+          labels: |
+            org.opencontainers.image.source=${{ github.event.repository.clone_url }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=rustdesk
+          cache-to: type=gha,mode=max,scope=rustdesk
