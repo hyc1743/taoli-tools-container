@@ -2,7 +2,8 @@ services:
   container:
     image: ghcr.io/taoli-tools/taoli-tools-container:rustdesk
     init: true
-    shm_size: 256m
+    security_opt:
+      - seccomp=/etc/docker/seccomp.json
     ulimits:
       nofile:
         soft: 65535
@@ -11,11 +12,20 @@ services:
       - target: 21118
         published: 21118
         protocol: tcp
-        mode: ingress
+        mode: host
     volumes:
       - data:/home/taoli/data
-      - rustdesk:/root/.config/rustdesk
+      - rustdesk:/home/rustdesk/.config/rustdesk
       - /mnt:/home/taoli/cert
+      - type: tmpfs
+        target: /dev/shm
+        tmpfs:
+          size: 268435456
+    environment:
+      RUSTDESK_ID_SERVER: ${RUSTDESK_ID_SERVER:-}
+      RUSTDESK_RELAY_SERVER: ${RUSTDESK_RELAY_SERVER:-}
+      RUSTDESK_API_SERVER: ${RUSTDESK_API_SERVER:-}
+      RUSTDESK_SERVER_KEY: ${RUSTDESK_SERVER_KEY:-}
     secrets:
       - source: RUSTDESK_PASSWORD
         target: RUSTDESK_PASSWORD
@@ -47,6 +57,8 @@ services:
 
   signer:
     image: ghcr.io/taoli-tools/taoli-tools-signer:latest
+    security_opt:
+      - seccomp=/etc/docker/seccomp.json
     secrets:
       - KEYCHAIN
       - CERT.pem
@@ -85,10 +97,13 @@ volumes:
 secrets:
   RUSTDESK_PASSWORD:
     external: true
-    name: taoli_tools_RUSTDESK_PASSWORD
+    name: ${RUSTDESK_PASSWORD_SECRET_NAME:-taoli_tools_RUSTDESK_PASSWORD}
   KEYCHAIN:
-    file: keychain.toml
+    external: true
+    name: taoli_tools_KEYCHAIN
   CERT.pem:
-    file: CERT.pem
+    external: true
+    name: taoli_tools_CERT.pem
   KEY.pem:
-    file: KEY.pem
+    external: true
+    name: taoli_tools_KEY.pem
