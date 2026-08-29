@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck python3-nacl python3-toml
+      - name: Static checks
+        run: |
+          shellcheck setup.sh entrypoint.sh entrypoint.rustdesk.sh chromium-entrypoint.sh
+          sh -n setup.sh entrypoint.sh entrypoint.rustdesk.sh chromium-entrypoint.sh
+          python3 -m json.tool seccomp.json >/dev/null
+          python3 -m unittest discover -s tests -v
+      - name: Render Compose and Swarm specifications
+        env:
+          RUSTDESK_PASSWORD_SECRET_NAME: ci-rustdesk-password
+        run: |
+          docker compose -f compose.yml config >/dev/null
+          docker compose -f compose.rustdesk.yml config >/dev/null
+          docker stack config -c compose.yml >/dev/null
+          docker stack config -c compose.rustdesk.yml >/dev/null
+      - name: Build RustDesk image
+        run: docker build --build-arg TARGETARCH=amd64 -f dockerfile.rustdesk -t taoli-tools-container:ci .
