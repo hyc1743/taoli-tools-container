@@ -2,6 +2,8 @@ FROM debian:bookworm-slim
 
 ARG TARGETARCH
 ARG RUSTDESK_VERSION=1.4.9
+ARG RUSTDESK_AMD64_SHA256=7244ba47c40e804172044bfbe659467c54ce46554c98e78c8c0406f1d612fda3
+ARG RUSTDESK_ARM64_SHA256=ce62c996f14d33f3bbe3a330e953644a44bace7f05885a7953f7395d69fb49c0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -19,18 +21,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   openbox \
   procps \
   python3-nacl \
+  python3-toml \
   python3-xdg \
   qrencode \
   tigervnc-standalone-server \
   tzdata \
+  xauth \
   x11-xserver-utils \
   && case "$TARGETARCH" in \
-    amd64) rustdesk_arch=x86_64 ;; \
-    arm64) rustdesk_arch=aarch64 ;; \
+    amd64) rustdesk_arch=x86_64; rustdesk_sha256="$RUSTDESK_AMD64_SHA256" ;; \
+    arm64) rustdesk_arch=aarch64; rustdesk_sha256="$RUSTDESK_ARM64_SHA256" ;; \
     *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
   esac \
   && curl -fsSL -o /tmp/rustdesk.deb \
     "https://github.com/rustdesk/rustdesk/releases/download/${RUSTDESK_VERSION}/rustdesk-${RUSTDESK_VERSION}-${rustdesk_arch}.deb" \
+  && echo "$rustdesk_sha256  /tmp/rustdesk.deb" | sha256sum -c - \
   && apt-get install -y --no-install-recommends /tmp/rustdesk.deb \
   && rm -f /tmp/rustdesk.deb \
   && rm -rf /var/lib/apt/lists/*
@@ -40,19 +45,30 @@ RUN ln -snf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
   && addgroup --gid 1000 taoli \
   && adduser --uid 1000 --ingroup taoli --home /home/taoli --shell /bin/sh \
     --disabled-password --gecos "" taoli \
-  && mkdir -p /home/taoli/data /root/.config/rustdesk /tmp/.X11-unix \
+  && addgroup --gid 1001 rustdesk \
+  && adduser --uid 1001 --ingroup rustdesk --home /home/rustdesk --shell /bin/sh \
+    --disabled-password --gecos "" rustdesk \
+  && addgroup --system desktop \
+  && adduser taoli desktop \
+  && adduser rustdesk desktop \
+  && mkdir -p /home/taoli/data /home/rustdesk/.config/rustdesk /tmp/.X11-unix \
   && chmod 1777 /tmp/.X11-unix \
-  && chown -R taoli:taoli /home/taoli
+  && chown -R taoli:taoli /home/taoli \
+  && chown -R rustdesk:rustdesk /home/rustdesk
 
 COPY entrypoint.rustdesk.sh /usr/local/bin/entrypoint.sh
 COPY rustdesk-2fa.py /usr/local/bin/rustdesk-2fa
+COPY chromium-entrypoint.sh /usr/local/bin/chromium-entrypoint
 
 ENV DISPLAY=:1 \
   DISPLAY_GEOMETRY=1280x720 \
   VNC_PORT=5900 \
   RUSTDESK_PORT=21118
 
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/rustdesk-2fa
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/rustdesk-2fa /usr/local/bin/chromium-entrypoint
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=3 \
+  CMD test -f /run/rustdesk-ready || exit 1
 
 EXPOSE 21118/tcp
 

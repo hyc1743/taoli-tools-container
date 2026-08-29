@@ -22,6 +22,7 @@ RUN cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 RUN addgroup -S taoli && adduser -S -G taoli -h /home/taoli -s /bin/sh taoli
 
 ADD entrypoint.sh /usr/local/bin/entrypoint.sh
+ADD chromium-entrypoint.sh /usr/local/bin/chromium-entrypoint
 
 ADD favicon.ico /usr/share/novnc/
 ADD index.html /usr/share/novnc/
@@ -30,7 +31,7 @@ ENV DISPLAY=:1 \
   NOVNC_PORT=443 \
   VNC_PORT=5900
 
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/chromium-entrypoint
 
 RUN mkdir -p /home/taoli; \
   chown -R taoli:taoli /home/taoli; \
