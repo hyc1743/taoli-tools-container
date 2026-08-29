@@ -74,7 +74,7 @@ service_env() {
 }
 secret_exists() { docker secret inspect "$1" >/dev/null 2>&1; }
 
-[ -r /dev/tty ] && [ -w /dev/tty ] || { echo 'An interactive terminal is required.' >&2; exit 1; }
+if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then echo 'An interactive terminal is required.' >&2; exit 1; fi
 [ "$(id -u)" -eq 0 ] || { echo 'Run the installer as root.' >&2; exit 1; }
 if ! command -v docker >/dev/null 2>&1; then curl -fsSL https://get.docker.com | sh; fi
 docker info >/dev/null 2>&1 || { echo 'The Docker daemon is not available.' >&2; exit 1; }
